@@ -9,6 +9,7 @@
 #include "m3_compile.h"
 #include "m3_exec.h"
 #include "m3_exception.h"
+#include "m3_info.h"
 
 
 M3Result  ParseType_Table  (IM3Module io_module, bytes_t i_bytes, cbytes_t i_end)
@@ -43,38 +44,35 @@ M3Result  ParseSection_Type  (IM3Module io_module, bytes_t i_bytes, cbytes_t i_e
     u32 numTypes;
 _   (ReadLEB_u32 (& numTypes, & i_bytes, i_end));                                   m3log (parse, "** Type [%d]", numTypes);
 
+    IM3FuncType ftype = NULL;
+
     if (numTypes)
     {
-        // FIX: these need to be instead added to a set in the runtime struct to facilitate IndirectCall
-
-_       (m3Alloc (& io_module->funcTypes, M3FuncType, numTypes));
-
+        // table of IM3FuncType (that point to the actual M3FuncType struct in the Environment)
+_       (m3Alloc (& io_module->funcTypes, IM3FuncType, numTypes));
         io_module->numFuncTypes = numTypes;
 
-        IM3FuncType ft = io_module->funcTypes;
-
-        while (numTypes--)
+        for (u32 i = 0; i < numTypes; ++i)
         {
             i8 form;
 _           (ReadLEB_i7 (& form, & i_bytes, i_end));
+            _throwif (m3Err_wasmMalformed, form != -32); // for WA MVP
 
-            if (form != -32)
-                _throw (m3Err_wasmMalformed); // for WA MVP               }
+            u32 numArgs;
+_           (ReadLEB_u32 (& numArgs, & i_bytes, i_end));
 
-_           (ReadLEB_u32 (& ft->numArgs, & i_bytes, i_end));
+_           (AllocFuncType (& ftype, numArgs));
+            ftype->numArgs = numArgs;
 
-            if (ft->numArgs <= d_m3MaxNumFunctionArgs)
+            for (u32 a = 0; a < numArgs; ++a)
             {
-                for (u32 i = 0; i < ft->numArgs; ++i)
-                {
-                    i8 wasmType;
-                    u8 argType;
-_                   (ReadLEB_i7 (& wasmType, & i_bytes, i_end));
-_                   (NormalizeType (& argType, wasmType));
-                    ft->argTypes [i] = argType;
-                }
+                i8 wasmType;
+                u8 argType;
+_               (ReadLEB_i7 (& wasmType, & i_bytes, i_end));
+_               (NormalizeType (& argType, wasmType));
+                
+                ftype->argTypes [a] = argType;
             }
-            else _throw (m3Err_typeListOverflow);
 
             u8 returnCount;
 _           (ReadLEB_u7 /* u1 in spec */ (& returnCount, & i_bytes, i_end));
@@ -83,10 +81,11 @@ _           (ReadLEB_u7 /* u1 in spec */ (& returnCount, & i_bytes, i_end));
             {
                 i8 returnType;
 _               (ReadLEB_i7 (& returnType, & i_bytes, i_end));
-_               (NormalizeType (& ft->returnType, returnType));
-            }                                                                       m3logif (parse, PrintFuncTypeSignature (ft))
+_               (NormalizeType (& ftype->returnType, returnType));
+            }                                                                       m3log (parse, "    type %2d: %s", i, SPrintFuncTypeSignature (ftype));
 
-            ++ft;
+            Environment_AddFuncType (io_module->environment, & ftype);
+            io_module->funcTypes [i] = ftype;
         }
     }
 
@@ -94,8 +93,8 @@ _               (NormalizeType (& ft->returnType, returnType));
 
     if (result)
     {
+        m3Free (ftype);
         m3Free (io_module->funcTypes);
-        io_module->funcTypes = NULL;
         io_module->numFuncTypes = 0;
     }
 
@@ -126,9 +125,7 @@ M3Result  ParseSection_Import  (IM3Module io_module, bytes_t i_bytes, cbytes_t i
 {
     M3Result result = m3Err_none;
 
-    M3ImportInfo import, clearImport;
-    M3_INIT(import);
-    M3_INIT(clearImport);
+    M3ImportInfo import = { NULL, NULL }, clearImport = { NULL, NULL };
 
     u32 numImports;
 _   (ReadLEB_u32 (& numImports, & i_bytes, i_end));                                 m3log (parse, "** Import [%d]", numImports);
@@ -139,7 +136,7 @@ _   (ReadLEB_u32 (& numImports, & i_bytes, i_end));                             
 
 _       (Read_utf8 (& import.moduleUtf8, & i_bytes, i_end));
 _       (Read_utf8 (& import.fieldUtf8, & i_bytes, i_end));
-_       (Read_u8 (& importKind, & i_bytes, i_end));                                 m3log (parse, "  - kind: %d; '%s.%s' ",
+_       (Read_u8 (& importKind, & i_bytes, i_end));                                 m3log (parse, "    kind: %d '%s.%s' ",
                                                                                                 (u32) importKind, import.moduleUtf8, import.fieldUtf8);
         switch (importKind)
         {
@@ -213,7 +210,7 @@ _   (ReadLEB_u32 (& numExports, & i_bytes, i_end));                             
 
 _       (Read_utf8 (& utf8, & i_bytes, i_end));
 _       (Read_u8 (& exportKind, & i_bytes, i_end));
-_       (ReadLEB_u32 (& index, & i_bytes, i_end));                                  m3log (parse, "  - index: %4d; kind: %d; export: '%s'; ", index, (u32) exportKind, utf8);
+_       (ReadLEB_u32 (& index, & i_bytes, i_end));                                  m3log (parse, "    index: %3d; kind: %d; export: '%s'; ", index, (u32) exportKind, utf8);
 
         if (exportKind == d_externalKind_function)
         {
@@ -247,6 +244,7 @@ _   (ReadLEB_u32 (& startFuncIndex, & i_bytes, i_end));                         
     _catch: return result;
 }
 
+
 M3Result  Parse_InitExpr  (M3Module * io_module, bytes_t * io_bytes, cbytes_t i_end)
 {
     M3Result result = m3Err_none;
@@ -263,7 +261,6 @@ M3Result  Parse_InitExpr  (M3Module * io_module, bytes_t * io_bytes, cbytes_t i_
 }
 
 
-
 M3Result  ParseSection_Element  (IM3Module io_module, bytes_t i_bytes, cbytes_t i_end)
 {
     M3Result result = m3Err_none;
@@ -271,17 +268,14 @@ M3Result  ParseSection_Element  (IM3Module io_module, bytes_t i_bytes, cbytes_t 
     u32 numSegments;
     result = ReadLEB_u32 (& numSegments, & i_bytes, i_end);                         m3log (parse, "** Element [%d]", numSegments);
 
-    if (not result)
-    {
-        io_module->elementSection = i_bytes;
-        io_module->elementSectionEnd = i_end;
-        io_module->numElementSegments = numSegments;
-    }
-    else result = "error parsing Element section";
+    _throwif ("error parsing Element section", result);
+    
+    io_module->elementSection = i_bytes;
+    io_module->elementSectionEnd = i_end;
+    io_module->numElementSegments = numSegments;
 
-    return result;
+    _catch: return result;
 }
-
 
 
 M3Result  ParseSection_Code  (M3Module * io_module, bytes_t i_bytes, cbytes_t i_end)
@@ -293,8 +287,7 @@ _   (ReadLEB_u32 (& numFunctions, & i_bytes, i_end));                           
 
     if (numFunctions != io_module->numFunctions - io_module->numImports)
     {
-        numFunctions = 0;
-        _throw (m3Err_wasmMalformed); // FIX: better error
+        _throw ("mismatched function count in code section");
     }
 
     for (u32 f = 0; f < numFunctions; ++f)
@@ -312,7 +305,7 @@ _       (ReadLEB_u32 (& size, & i_bytes, i_end));
                 const u8 * start = ptr;
 
                 u32 numLocalBlocks;
-_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end));                                      m3log (parse, "  - func size: %d; local blocks: %d", size, numLocalBlocks);
+_               (ReadLEB_u32 (& numLocalBlocks, & ptr, i_end));                                      m3log (parse, "    code size: %-4d", size);
 
                 u32 numLocals = 0;
 
@@ -326,7 +319,7 @@ _                   (ReadLEB_u32 (& varCount, & ptr, i_end));
 _                   (ReadLEB_i7 (& wasmType, & ptr, i_end));
 _                   (NormalizeType (& normalType, wasmType));
 
-                    numLocals += varCount;                                                      m3log (parse, "    - %d locals; type: '%s'", varCount, c_waTypes [normalType]);
+                    numLocals += varCount;                                                      m3log (parse, "      %2d locals; type: '%s'", varCount, c_waTypes [normalType]);
                 }
 
                 IM3Function func = Module_GetFunction (io_module, f + io_module->numImports);
@@ -334,6 +327,7 @@ _                   (NormalizeType (& normalType, wasmType));
                 func->module = io_module;
                 func->wasm = start;
                 func->wasmEnd = i_bytes;
+                func->ownsWasmCode = io_module->hasWasmCodeCopy;
                 func->numLocals = numLocals;
             }
             else _throw (m3Err_wasmSectionOverrun);
@@ -370,18 +364,15 @@ _       (ReadLEB_u32 (& segment->memoryRegion, & i_bytes, i_end));
 _       (Parse_InitExpr (io_module, & i_bytes, i_end));
         segment->initExprSize = (u32) (i_bytes - segment->initExpr);
 
-        if (segment->initExprSize <= 1)
-            _throw (m3Err_wasmMissingInitExpr);
+        _throwif (m3Err_wasmMissingInitExpr, segment->initExprSize <= 1);
 
 _       (ReadLEB_u32 (& segment->size, & i_bytes, i_end));
-
         segment->data = i_bytes;                                                    m3log (parse, "    segment [%u]  memory: %u;  expr-size: %d;  size: %d",
                                                                                        i, segment->memoryRegion, segment->initExprSize, segment->size);
         i_bytes += segment->size;
     }
 
     _catch:
-    // TODO failure cleanup
 
     return result;
 }
@@ -396,11 +387,9 @@ M3Result  ParseSection_Memory  (M3Module * io_module, bytes_t i_bytes, cbytes_t 
     u32 numMemories;
 _   (ReadLEB_u32 (& numMemories, & i_bytes, i_end));                             m3log (parse, "** Memory [%d]", numMemories);
 
-    if (numMemories == 1)
-    {
-        ParseType_Memory (& io_module->memoryInfo, & i_bytes, i_end);
-    }
-    else _throw (m3Err_tooManyMemorySections);
+    _throwif (m3Err_tooManyMemorySections, numMemories != 1);
+
+    ParseType_Memory (& io_module->memoryInfo, & i_bytes, i_end);
 
     _catch: return result;
 }
@@ -420,7 +409,7 @@ _   (ReadLEB_u32 (& numGlobals, & i_bytes, i_end));                             
 
 _       (ReadLEB_i7 (& waType, & i_bytes, i_end));
 _       (NormalizeType (& type, waType));
-_       (ReadLEB_u7 (& isMutable, & i_bytes, i_end));                                 m3log (parse, "  - add global: [%d] %s mutable: %d", i, c_waTypes [type],   (u32) isMutable);
+_       (ReadLEB_u7 (& isMutable, & i_bytes, i_end));                                 m3log (parse, "    global: [%d] %s mutable: %d", i, c_waTypes [type],   (u32) isMutable);
 
         IM3Global global;
 _       (Module_AddGlobal (io_module, & global, type, isMutable, false /* isImport */));
@@ -429,8 +418,7 @@ _       (Module_AddGlobal (io_module, & global, type, isMutable, false /* isImpo
 _       (Parse_InitExpr (io_module, & i_bytes, i_end));
         global->initExprSize = (u32) (i_bytes - global->initExpr);
 
-        if (global->initExprSize <= 1)
-            _throw (m3Err_wasmMissingInitExpr);
+        _throwif (m3Err_wasmMissingInitExpr, global->initExprSize <= 1);
     }
 
     _catch: return result;
@@ -473,8 +461,8 @@ _               (Read_utf8 (& name, & i_bytes, i_end));
                 {
                     if (not io_module->functions [index].name)
                     {
-                        io_module->functions [index].name = name;                   m3log (parse, "naming function [%d]: %s", index, name);
-                        name = NULL;
+                        io_module->functions [index].name = name;                   m3log (parse, "    naming function%5d:  %s", index, name);
+                        name = NULL; // transfer ownership
                     }
 //                          else m3log (parse, "prenamed: %s", io_module->functions [index].name);
                 }
@@ -525,7 +513,7 @@ M3Result  ParseModuleSection  (M3Module * o_module, u8 i_sectionType, bytes_t i_
     }
     else
     {
-        m3log (parse, "<skipped (id: %d)>", (u32) i_sectionType);
+        m3log (parse, " skipped section type: %d", (u32) i_sectionType);
     }
 
     return result;
@@ -539,51 +527,45 @@ M3Result  m3_ParseModule  (IM3Environment i_environment, IM3Module * o_module, c
     IM3Module module;
 _try {
 _   (m3Alloc (& module, M3Module, 1));
-//  Module_Init (module);
 
     module->name = ".unnamed";                                                      m3log (parse, "load module: %d bytes", i_numBytes);
     module->startFunction = -1;
+    module->hasWasmCodeCopy = false;
+    module->environment = i_environment;
 
     const u8 * pos = i_bytes;
     const u8 * end = pos + i_numBytes;
 
-    u32 magic = 0;
+    u32 magic, version;
 _   (Read_u32 (& magic, & pos, end));
+_   (Read_u32 (& version, & pos, end));
+    
+    _throwif (m3Err_wasmMalformed, magic != 0x6d736100);
+    _throwif (m3Err_incompatibleWasmVersion, version != 1);
+                                                                                    m3log (parse,  "found magic + version");
+    u8 previousSection = 0;
 
-    if (magic == 0x6d736100)
+    while (pos < end)
     {
-        u32 version;
-_       (Read_u32 (&version, & pos, end));
+        u8 section;
+_       (ReadLEB_u7 (& section, & pos, end));
 
-        if (version == 1)
-        {                                                                           m3log (parse,  "found magic + version");
-            u8 previousSection = 0;
+        if (section > previousSection or            // from the spec: sections must appear in order
+            section == 0 or                         // custom section
+            (section == 12 and section == 9) or     // if present, DataCount goes after Element
+            (section == 10 and section == 12))      // and before Code
+        {
+            u32 sectionLength;
+_           (ReadLEB_u32 (& sectionLength, & pos, end));
+_           (ParseModuleSection (module, section, pos, sectionLength));
 
-            while (pos < end)
-            {
-                u8 sectionCode;
-_               (ReadLEB_u7 (& sectionCode, & pos, end));
+            pos += sectionLength;
 
-                if (sectionCode > previousSection or  // from the spec: sections must appear in order
-                    sectionCode == 0 or
-                    (sectionCode == 12 and previousSection == 9) or  // if present, DataCount goes after Element
-                    (sectionCode == 10 and previousSection == 12)    // and before Code
-                ) {
-                    u32 sectionLength;
-_                   (ReadLEB_u32 (& sectionLength, & pos, end));
-_                   (ParseModuleSection (module, sectionCode, pos, sectionLength));
-
-                    pos += sectionLength;
-
-                    if (sectionCode)
-                        previousSection = sectionCode;
-                }
-                else _throw (m3Err_misorderedWasmSection);
-            }
+            if (section)
+                previousSection = section;
         }
-        else _throw (m3Err_incompatibleWasmVersion);
+        else _throw (m3Err_misorderedWasmSection);
     }
-    else _throw (m3Err_wasmMalformed);
 
     } _catch:
 

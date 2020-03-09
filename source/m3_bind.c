@@ -8,8 +8,9 @@
 #include "m3_exec.h"
 #include "m3_env.h"
 #include "m3_exception.h"
+#include "m3_info.h"
 
-static
+
 u8  ConvertTypeCharToTypeId (char i_code)
 {
     switch (i_code) {
@@ -23,30 +24,41 @@ u8  ConvertTypeCharToTypeId (char i_code)
     return c_m3Type_none;
 }
 
-static
-M3Result  ValidateSignature  (IM3Function i_function, ccstr_t i_linkingSignature)
+
+M3Result  SignatureToFuncType  (IM3FuncType * o_functionType, ccstr_t i_signature)
 {
     M3Result result = m3Err_none;
 
-    cstr_t sig = i_linkingSignature;
-    IM3FuncType bindType = i_function->funcType;
+    IM3FuncType funcType = NULL;
 
+    if (not o_functionType)
+        _throw ("null function type");
+    
+    if (not i_signature)
+        _throw ("null function signature");
+    
+    cstr_t sig = i_signature;
+    
     bool hasReturn = false;
-    u32 numArgs = 0;
-
+    
+    size_t maxNumArgs = strlen (i_signature);
+    _throwif (m3Err_malformedFunctionSignature, maxNumArgs < 3);
+    
+    maxNumArgs -= 3;  // "v()"
+    _throwif ("insane argument count", maxNumArgs > d_m3MaxSaneFunctionArgCount);
+    
+_   (AllocFuncType (& funcType, (u32) maxNumArgs));
+    
     bool parsingArgs = false;
     while (* sig)
     {
-        if (numArgs >= d_m3MaxNumFunctionArgs)
-            _throw ("[link] arg count overflow");
-
         char typeChar = * sig++;
-
+        
         if (typeChar == '(')
         {
             if (not hasReturn)
-                _throw ("[link] malformed function signature; missing return type");
-
+                break;
+            
             parsingArgs = true;
             continue;
         }
@@ -54,51 +66,78 @@ M3Result  ValidateSignature  (IM3Function i_function, ccstr_t i_linkingSignature
             continue;
         else if (typeChar == ')')
             break;
-
+        
         u8 type = ConvertTypeCharToTypeId (typeChar);
-
-        if (type)
+        
+        if (not type)
+            _throw ("unknown argument type char");
+        
+        if (not parsingArgs)
         {
-            if (not parsingArgs)
-            {
-                if (hasReturn)
-                    _throw ("[link] malformed function signature; too many return types");
+            if (hasReturn)
+                _throw ("malformed function signature; too many return types");
+            
+            hasReturn = true;
+            
+            // M3FuncType doesn't speak 'void'
+            if (type == c_m3Type_void)
+                type = c_m3Type_none;
+            if (type == c_m3Type_ptr)
+                type = c_m3Type_i32;
 
-                hasReturn = true;
-                
-                // M3FuncType doesn't speak 'void'
-                if (type == c_m3Type_void)
-                    type = c_m3Type_none;
-                
-                if (type != bindType->returnType)
-                    _throw ("[link] mismatch return type in linking function");
-            }
-            else
+            funcType->returnType = type;
+        }
+        else
+        {
+            _throwif (m3Err_malformedFunctionSignature, funcType->numArgs >= maxNumArgs);  // forgot trailing ')' ?
+            
+            if (type != c_m3Type_runtime)
             {
-                if (type != c_m3Type_runtime)
-                {
-                    ++numArgs;
-                    
-                    if (numArgs <= bindType->numArgs)
-                    {
-                        if (type == c_m3Type_ptr)
-                            type = c_m3Type_i32;
-                        
-                        if (type != bindType->argTypes [numArgs - 1])
-                            _throw ("[link] mismatched argument type");
-                    }
-                    else break;
-                }
+                if (type == c_m3Type_ptr)
+                    type = c_m3Type_i32;
+                
+                funcType->argTypes [funcType->numArgs++] = type;
             }
         }
-        else _throw ("[link] unknown argument type char");
+    }
+    
+    if (not hasReturn)
+        _throw (m3Err_funcSignatureMissingReturnType);
+    
+    _catch:
+    
+    if (result)
+        m3Free (funcType);  // nulls funcType
+    
+    * o_functionType = funcType;
+    
+    return result;
+}
+
+
+static
+M3Result  ValidateSignature  (IM3Function i_function, ccstr_t i_linkingSignature)
+{
+    M3Result result = m3Err_none;
+
+    IM3FuncType ftype = NULL;
+_   (SignatureToFuncType (& ftype, i_linkingSignature));
+
+    if (not AreFuncTypesEqual (ftype, i_function->funcType))
+    {
+        m3log (module, "expected: %s", SPrintFuncTypeSignature (ftype));
+        m3log (module, "   found: %s", SPrintFuncTypeSignature (i_function->funcType));
+
+        _throw ("function signature mismatch");
     }
 
-    if (bindType->numArgs != numArgs)
-        _throw ("[link] function arg count mismatch");
-
-    _catch: return result;
+    _catch:
+    
+    m3Free (ftype);
+    
+    return result;
 }
+
 
 typedef M3Result  (* M3Linker)  (IM3Module io_module,  IM3Function io_function,  const char * const i_signature,  const void * i_function);
 

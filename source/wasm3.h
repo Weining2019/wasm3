@@ -118,6 +118,9 @@ d_m3ErrorConst  (tooManyMemorySections,         "Wasm MVP can only define one me
 d_m3ErrorConst  (moduleAlreadyLinked,           "attempting to bind module to multiple runtimes")
 d_m3ErrorConst  (functionLookupFailed,          "function lookup failed")
 d_m3ErrorConst  (functionImportMissing,         "missing imported function")
+    
+d_m3ErrorConst  (malformedFunctionSignature,    "malformed function signature")
+d_m3ErrorConst  (funcSignatureMissingReturnType,"function signature missing return type")
 
 // compilation errors
 d_m3ErrorConst  (noCompiler,                    "no compiler found for opcode")
@@ -142,6 +145,7 @@ d_m3ErrorConst  (trapIntegerOverflow,           "[trap] integer overflow")
 d_m3ErrorConst  (trapIntegerConversion,         "[trap] invalid conversion to integer")
 d_m3ErrorConst  (trapIndirectCallTypeMismatch,  "[trap] indirect call type mismatch")
 d_m3ErrorConst  (trapTableIndexOutOfRange,      "[trap] undefined element")
+d_m3ErrorConst  (trapTableElementIsNull,        "[trap] null table element")
 d_m3ErrorConst  (trapExit,                      "[trap] program called exit")
 d_m3ErrorConst  (trapAbort,                     "[trap] program called abort")
 d_m3ErrorConst  (trapUnreachable,               "[trap] unreachable executed")
