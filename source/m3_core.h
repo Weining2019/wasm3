@@ -18,8 +18,8 @@
 #include "m3_config.h"
 
 # if defined(__cplusplus)
-#   define d_m3BeginExternC	    extern "C" {
-#   define d_m3EndExternC	    }
+#   define d_m3BeginExternC     extern "C" {
+#   define d_m3EndExternC       }
 # else
 #   define d_m3BeginExternC
 #   define d_m3EndExternC
@@ -46,6 +46,8 @@ typedef const char *            cstr_t;
 typedef const char * const      ccstr_t;
 typedef const u8 *              bytes_t;
 typedef const u8 * const        cbytes_t;
+
+typedef u16                     m3opcode_t;
 
 typedef i64                     m3reg_t;
 
