@@ -28,20 +28,16 @@ void run_wasm()
     uint8_t* wasm = (uint8_t*)fib32_wasm;
     size_t fsize = fib32_wasm_len-1;
 
-    printk("## a\n");
     IM3Environment env = m3_NewEnvironment ();
     if (!env) FATAL("m3_NewEnvironment failed");
 
-    printk("## b\n");
     IM3Runtime runtime = m3_NewRuntime (env, 64*1024, NULL);
     if (!runtime) FATAL("m3_NewRuntime failed");
 
-    printk("## c\n");
     IM3Module module;
     result = m3_ParseModule (env, &module, wasm, fsize);
     if (result) FATAL("m3_ParseModule: %s", result);
 
-    printk("## d\n");
     result = m3_LoadModule (runtime, module);
     if (result) FATAL("m3_LoadModule: %s", result);
 
@@ -53,17 +49,14 @@ void run_wasm()
     if (result) FATAL("m3_LinkLibC: %s", result);
     */
 
-    printk("## find function\n");
     IM3Function f;
     result = m3_FindFunction (&f, runtime, "app_main");
     if (result) FATAL("m3_FindFunction: %s", result);
 
-    printk("## 1\n");
     const char* i_argv[1] = {  NULL };
     result = m3_CallWithArgs (f, 0, i_argv);
 
     if (result) FATAL("Call: %s", result);
-    printk("## 2\n");
 
     uint64_t value = *(uint64_t*)(runtime->stack);
     printk("Result: 0x%llx\n", value);
