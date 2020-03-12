@@ -72,7 +72,6 @@ int  main  (int i_argc, const char * i_argv [])
 
     //uint32_t elapsed_time = (end - start)*1000 / CLOCKS_PER_SEC ;
     printk("Elapsed: %d \n", (end - start));
-    printk("### done\n");
 
     return 0;
 }
