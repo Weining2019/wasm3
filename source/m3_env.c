@@ -276,7 +276,7 @@ void  Environment_ReleaseCodePages  (IM3Environment i_environment, IM3CodePage i
 }
 
 
-IM3Runtime  m3_NewRuntime  (IM3Environment i_environment, u32 i_stackSizeInBytes, M3StackInfo * i_nativeStackInfo)
+IM3Runtime  m3_NewRuntime  (IM3Environment i_environment, u32 i_stackSizeInBytes, void * unused)
 {
     IM3Runtime runtime = NULL;
     m3Alloc (& runtime, M3Runtime, 1);
@@ -413,7 +413,7 @@ M3Result  EvaluateExpression  (IM3Module i_module, void * o_expressed, u8 i_type
                 {
                     * (u32 *) o_expressed = * ((u32 *) stack);
                 }
-                else if (SizeOfType (i_type) == sizeof (u64))
+                else
                 {
                     * (u64 *) o_expressed = * ((u64 *) stack);
                 }
@@ -475,7 +475,7 @@ M3Result  ResizeMemory  (IM3Runtime io_runtime, u32 i_numPages)
 
         // Limit the amount of memory that gets allocated
         if (io_runtime->memoryLimit) {
-            numPageBytes = m3_min (numPageBytes, io_runtime->memoryLimit);
+            numPageBytes = M3_MIN (numPageBytes, io_runtime->memoryLimit);
         }
 
         size_t numBytes = numPageBytes + sizeof (M3MemoryHeader);
@@ -486,9 +486,9 @@ M3Result  ResizeMemory  (IM3Runtime io_runtime, u32 i_numPages)
 
 _       (m3Reallocate (& memory->mallocated, numBytes, numPreviousBytes));
 
-#       if d_m3LogRuntime
-        u8 * oldMallocated = memory->mallocated;
-#       endif
+# if d_m3LogRuntime
+        M3MemoryHeader * oldMallocated = memory->mallocated;
+# endif
 
         memory->numPages = numPagesToAlloc;
 
@@ -781,13 +781,9 @@ _       ((M3Result) Call (i_function->compiled, (m3stack_t) stack, runtime->memo
         case c_m3Type_f32:  fprintf (stderr, "Result: %f\n",   *(f32*)(stack));  break;
         case c_m3Type_f64:  fprintf (stderr, "Result: %lf\n",  *(f64*)(stack));  break;
 #else
-        case c_m3Type_i32:  fprintf (stderr, "Result: %u\n",  *(u32*)(stack));  break;
-        case c_m3Type_f32:  {
-            union { u32 u; f32 f; } union32;
-            union32.f = * (f32 *)(stack);
-            fprintf (stderr, "Result: %u\n", union32.u );
-            break;
-        }
+        case c_m3Type_i32:
+        case c_m3Type_f32:
+            fprintf (stderr, "Result: %u\n",  *(u32*)(stack));  break;
         case c_m3Type_i64:
         case c_m3Type_f64:
             fprintf (stderr, "Result: %" PRIu64 "\n", *(u64*)(stack));  break;
@@ -895,7 +891,7 @@ IM3CodePage  AcquireCodePageWithCapacity  (IM3Runtime i_runtime, u32 i_minLineCo
         if (page)
             i_runtime->numCodePages++;
     }
-    
+
     if (page)
     {                                                            m3log (emit, "acquire page: %d", page->info.sequence);
         i_runtime->numActiveCodePages++;
@@ -968,28 +964,7 @@ void m3_ResetErrorInfo (IM3Runtime i_runtime)
     i_runtime->error.message = "";
 }
 
-
-void  GetStackInfo  (M3StackInfo * io_info)
-{
-    io_info->startAddr = (void *) io_info;
-
-    bool stackGrowsDown = false;
-    stackGrowsDown = io_info->startAddr > (void *) & stackGrowsDown;
-
-    if (stackGrowsDown)
-        io_info->stackSize *= -1;
-}
-
-
-M3StackInfo  m3_GetNativeStackInfo  (i32 i_stackSize)
-{
-    M3StackInfo info = { NULL, i_stackSize };
-    GetStackInfo (& info);
-
-    return info;
-}
-
-const uint8_t *  m3_GetMemory  (IM3Runtime i_runtime, uint32_t * o_memorySizeInBytes, uint32_t i_memoryIndex)
+uint8_t *  m3_GetMemory  (IM3Runtime i_runtime, uint32_t * o_memorySizeInBytes, uint32_t i_memoryIndex)
 {
     uint8_t * memory = NULL;
     d_m3Assert (i_memoryIndex == 0);

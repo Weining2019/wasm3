@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.11)
 
-option(BUILD_WASI_SUPPORT "Build with WASI support" ON)
+set(BUILD_WASI "uvwasi" CACHE STRING "WASI implementation")
+set_property(CACHE BUILD_WASI PROPERTY STRINGS none simple uvwasi metawasi)
 
 set(OUT_FILE "wasm3")
 set(APP_DIR  "platforms/app")
@@ -30,17 +31,28 @@ if(CLANG_CL)
   set(CMAKE_LINKER       "lld-link")
 endif()
 
-if(EMSCRIPTEN)
+if(EMSCRIPTEN OR EMSCRIPTEN_LIB)
   set(CMAKE_C_COMPILER   "emcc")
   set(CMAKE_CXX_COMPILER "em++")
 
-  set(OUT_FILE           "wasm3.html")
-  set(APP_DIR            "platforms/emscripten")
+  if (EMSCRIPTEN_LIB)
+    set(APP_DIR          "platforms/emscripten_lib")
+    set(OUT_FILE         "wasm3.wasm")
+    set(CMAKE_C_FLAGS    "${CMAKE_C_FLAGS} -s STANDALONE_WASM")
+  else()
+    set(APP_DIR          "platforms/emscripten")
+    set(OUT_FILE         "wasm3.html")
+  endif()
 endif()
 
 # Detect WasiEnv
 if(DEFINED ENV{WASI_CC})
   set(WASIENV            1)
+endif()
+
+# Detect MinGW
+if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU")
+  set(MINGW              1)
 endif()
 
 if(BUILD_32BIT)
@@ -77,32 +89,32 @@ add_executable(${OUT_FILE} ${app_srcs})
 
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG=1")
 
-if(EMSCRIPTEN)
-  set(CMAKE_C_FLAGS_RELEASE "-O2 -flto -Wfatal-errors")
-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 --lto-O3 --closure 1 --strip-all --gc-sections") # --emrun
-  if(WASM_TCO)
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Xclang -target-feature -Xclang +tail-call")
+if(EMSCRIPTEN OR EMSCRIPTEN_LIB)
+
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s GLOBAL_BASE=1024 -s TOTAL_STACK=2MB -s INITIAL_MEMORY=4MB -s ALLOW_MEMORY_GROWTH")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s EXPORTED_FUNCTIONS='[\"_malloc\",\"_free\"]'")
+
+  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -flto -Wfatal-errors -s ASSERTIONS=0")
+  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} --strip-all --gc-sections")
+
+  if(WASM_EXT)
+    set(CMAKE_C_FLAGS    "${CMAKE_C_FLAGS} -mbulk-memory -mnontrapping-fptoint -msign-ext -mtail-call")
   endif()
+
 elseif(WASIENV)
 
-  if(BUILD_WASI_SUPPORT)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasMetaWASI -Dd_m3HasTracer")
-  endif()
-
-  set(CMAKE_C_FLAGS_RELEASE "-O3 -Wfatal-errors -fomit-frame-pointer -fno-stack-check -fno-stack-protector")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasTracer")
+  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -Wfatal-errors -fomit-frame-pointer -fno-stack-check -fno-stack-protector")
 
   # TODO: LTO breaks wasm imports currently:
   # https://www.mail-archive.com/llvm-bugs@lists.llvm.org/msg36273.html
 
   #-flto -Wl,--lto-O3
   set(CMAKE_EXE_LINKER_FLAGS      "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
-elseif(WIN32)
 
-  if(BUILD_WASI_SUPPORT)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasWASI")
-  endif()
+elseif(WIN32 AND NOT MINGW)
 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS /WX- /diagnostics:column")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasTracer -D_CRT_SECURE_NO_WARNINGS /WX- /diagnostics:column")
 
   string(REGEX REPLACE "/W[0-4]" "/W0" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
@@ -126,12 +138,9 @@ elseif(WIN32)
 
 else()
 
-  if(BUILD_WASI_SUPPORT)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasWASI -Dd_m3HasTracer") #-Dd_m3FixedHeap=1048576
-  endif()
-
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasTracer") #-Dd_m3FixedHeap=1048576
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wparentheses -Wundef -Wpointer-arith -Wstrict-aliasing=2")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=shadow -Werror=implicit-function-declaration") # -Werror=cast-align
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=implicit-function-declaration") # -Werror=cast-align
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-parameter -Wno-missing-field-initializers")
   if (CMAKE_C_COMPILER_ID MATCHES "Clang")
     # TODO: Place clang-specific options here
@@ -140,11 +149,39 @@ else()
   endif()
   set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -ggdb -O0")
 
+  if(NOT BUILD_WASI MATCHES "uvwasi")
+    # -Werror=shadow fails when building libuv. Enable it only if libuv is not present.
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=shadow")
+  endif()
+
   set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -Wfatal-errors -fomit-frame-pointer -fno-stack-check -fno-stack-protector") #-fno-inline
   set(CMAKE_EXE_LINKER_FLAGS_DEBUG "-O0")
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-O3")
 
   target_link_libraries(${OUT_FILE} m)
+
+endif()
+
+if(BUILD_WASI MATCHES "simple")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasWASI")
+elseif(BUILD_WASI MATCHES "metawasi")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasMetaWASI")
+elseif(BUILD_WASI MATCHES "uvwasi")
+  include(FetchContent)
+  FetchContent_Declare(
+    uvwasi
+    GIT_REPOSITORY https://github.com/cjihrig/uvwasi.git
+    GIT_TAG v0.0.9
+  )
+
+  FetchContent_GetProperties(uvwasi)
+  if(NOT uvwasi_POPULATED)
+    FetchContent_Populate(uvwasi)
+    include_directories("${uvwasi_SOURCE_DIR}/include")
+    add_subdirectory(${uvwasi_SOURCE_DIR} ${uvwasi_BINARY_DIR} EXCLUDE_FROM_ALL)
+  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Dd_m3HasUVWASI")
+  target_link_libraries(${OUT_FILE} uvwasi_a uv_a)
 endif()
 
 check_ipo_supported(RESULT result)

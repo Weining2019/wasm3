@@ -17,10 +17,6 @@ void m3Abort(const char* message) {
     abort();
 }
 
-void m3NotImplemented() {
-    m3Abort("Not implemented");
-}
-
 M3_WEAK
 M3Result m3_Yield ()
 {
@@ -181,7 +177,7 @@ void        m3StackCheck ()
     size_t addr = (size_t)&stack;
 
     size_t stackEnd = stack_end;
-    stack_end = m3_min (stack_end, addr);
+    stack_end = M3_MIN (stack_end, addr);
 
 //    if (stackEnd != stack_end)
 //        printf ("maxStack: %ld\n", m3StackGetMax ());
@@ -237,12 +233,10 @@ bool  Is64BitType  (u8 i_m3Type)
 
 u32  SizeOfType  (u8 i_m3Type)
 {
-    u32 size = sizeof (i64);
-
     if (i_m3Type == c_m3Type_i32 or i_m3Type == c_m3Type_f32)
-        size = sizeof (i32);
+        return sizeof (i32);
 
-    return size;
+    return sizeof (i64);
 }
 
 
@@ -257,6 +251,7 @@ M3Result  Read_u64  (u64 * o_value, bytes_t * io_bytes, cbytes_t i_end)
     if (ptr <= i_end)
     {
         memcpy(o_value, * io_bytes, sizeof(u64));
+        M3_BSWAP_u64(*o_value);
         * io_bytes = ptr;
         return m3Err_none;
     }
@@ -272,11 +267,14 @@ M3Result  Read_u32  (u32 * o_value, bytes_t * io_bytes, cbytes_t i_end)
     if (ptr <= i_end)
     {
         memcpy(o_value, * io_bytes, sizeof(u32));
+        M3_BSWAP_u32(*o_value);
         * io_bytes = ptr;
         return m3Err_none;
     }
     else return m3Err_wasmUnderrun;
 }
+
+#if d_m3HasFloat
 
 M3Result  Read_f64  (f64 * o_value, bytes_t * io_bytes, cbytes_t i_end)
 {
@@ -286,6 +284,7 @@ M3Result  Read_f64  (f64 * o_value, bytes_t * io_bytes, cbytes_t i_end)
     if (ptr <= i_end)
     {
         memcpy(o_value, * io_bytes, sizeof(f64));
+        M3_BSWAP_f64(*o_value);
         * io_bytes = ptr;
         return m3Err_none;
     }
@@ -301,12 +300,14 @@ M3Result  Read_f32  (f32 * o_value, bytes_t * io_bytes, cbytes_t i_end)
     if (ptr <= i_end)
     {
         memcpy(o_value, * io_bytes, sizeof(f32));
+        M3_BSWAP_f32(*o_value);
         * io_bytes = ptr;
         return m3Err_none;
     }
     else return m3Err_wasmUnderrun;
 }
 
+#endif
 
 M3Result  Read_u8  (u8 * o_value, bytes_t  * io_bytes, cbytes_t i_end)
 {

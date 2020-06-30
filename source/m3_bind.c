@@ -30,7 +30,7 @@ M3Result  SignatureToFuncType  (IM3FuncType * o_functionType, ccstr_t i_signatur
     M3Result result = m3Err_none;
 
     IM3FuncType funcType = NULL;
-
+_try {
     if (not o_functionType)
         _throw ("null function type");
 
@@ -91,20 +91,17 @@ _   (AllocFuncType (& funcType, (u32) maxNumArgs));
         {
             _throwif (m3Err_malformedFunctionSignature, funcType->numArgs >= maxNumArgs);  // forgot trailing ')' ?
 
-            if (type != c_m3Type_runtime)
-            {
-                if (type == c_m3Type_ptr)
-                    type = c_m3Type_i32;
+            if (type == c_m3Type_ptr)
+                type = c_m3Type_i32;
 
-                funcType->argTypes [funcType->numArgs++] = type;
-            }
+            funcType->argTypes [funcType->numArgs++] = type;
         }
     }
 
     if (not hasReturn)
         _throw (m3Err_funcSignatureMissingReturnType);
 
-    _catch:
+} _catch:
 
     if (result)
         m3Free (funcType);  // nulls funcType

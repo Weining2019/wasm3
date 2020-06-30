@@ -28,8 +28,11 @@
 d_m3BeginExternC
 
 #if !defined(d_m3ShortTypesDefined)
+#if d_m3HasFloat
 typedef double          f64;
 typedef float           f32;
+#endif
+
 typedef uint64_t        u64;
 typedef int64_t         i64;
 typedef uint32_t        u32;
@@ -128,7 +131,7 @@ const void * const  cvptr_t;
 # endif
 
 
-# ifdef DEBUG
+# if (defined(DEBUG) || defined(ASSERTS)) && !defined(NASSERTS)
 #   define d_m3Assert(ASS)      assert (ASS)
 # else
 #   define d_m3Assert(ASS)
@@ -205,7 +208,6 @@ size_t      m3StackGetMax           ();
 #endif
 
 void        m3Abort                 (const char* message);
-void        m3NotImplemented        (void);
 
 M3Result    m3_Malloc                (void ** o_ptr, size_t i_size);
 M3Result    m3_Realloc               (void ** io_ptr, size_t i_newSize, size_t i_oldSize);
@@ -225,22 +227,24 @@ bool        IsFpType                (u8 i_wasmType);
 bool        Is64BitType             (u8 i_m3Type);
 u32         SizeOfType              (u8 i_m3Type);
 
-M3Result    Read_u64                (u64 * o_value, const u8 ** io_bytes, cbytes_t i_end);
-M3Result    Read_u32                (u32 * o_value, const u8 ** io_bytes, cbytes_t i_end);
+M3Result    Read_u64                (u64 * o_value, bytes_t * io_bytes, cbytes_t i_end);
+M3Result    Read_u32                (u32 * o_value, bytes_t * io_bytes, cbytes_t i_end);
+#if d_m3HasFloat
 M3Result    Read_f64                (f64 * o_value, bytes_t * io_bytes, cbytes_t i_end);
 M3Result    Read_f32                (f32 * o_value, bytes_t * io_bytes, cbytes_t i_end);
-M3Result    Read_u8                 (u8 * o_value, const u8 ** io_bytes, cbytes_t i_end);
+#endif
+M3Result    Read_u8                 (u8  * o_value, bytes_t * io_bytes, cbytes_t i_end);
 
 M3Result    ReadLebUnsigned         (u64 * o_value, u32 i_maxNumBits, bytes_t * io_bytes, cbytes_t i_end);
 M3Result    ReadLebSigned           (i64 * o_value, u32 i_maxNumBits, bytes_t * io_bytes, cbytes_t i_end);
-M3Result    ReadLEB_u32             (u32 * o_value, bytes_t* io_bytes, cbytes_t i_end);
-M3Result    ReadLEB_u7              (u8 * o_value, bytes_t * io_bytes, cbytes_t i_end);
-M3Result    ReadLEB_i7              (i8 * o_value, bytes_t * io_bytes, cbytes_t i_end);
+M3Result    ReadLEB_u32             (u32 * o_value, bytes_t * io_bytes, cbytes_t i_end);
+M3Result    ReadLEB_u7              (u8  * o_value, bytes_t * io_bytes, cbytes_t i_end);
+M3Result    ReadLEB_i7              (i8  * o_value, bytes_t * io_bytes, cbytes_t i_end);
 M3Result    ReadLEB_i32             (i32 * o_value, bytes_t * io_bytes, cbytes_t i_end);
 M3Result    ReadLEB_i64             (i64 * o_value, bytes_t * io_bytes, cbytes_t i_end);
 M3Result    Read_utf8               (cstr_t * o_utf8, bytes_t * io_bytes, cbytes_t i_end);
 
-size_t      SPrintArg               (char * o_string, size_t i_n, u64 * i_sp, u8 i_type);
+size_t      SPrintArg               (char * o_string, size_t i_n, m3stack_t i_sp, u8 i_type);
 
 void        ReportError             (IM3Runtime io_runtime, IM3Module i_module, IM3Function i_function, ccstr_t i_errorMessage, ccstr_t i_file, u32 i_lineNum);
 

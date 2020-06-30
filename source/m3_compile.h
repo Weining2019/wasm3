@@ -152,8 +152,15 @@ const M3OpInfo* GetOpInfo(m3opcode_t opcode) {
     #define M3OP(...)       { __VA_ARGS__ }
     #define M3OP_RESERVED   { "reserved" }
 #else
+    // Strip-off name
     #define M3OP(name, ...) { __VA_ARGS__ }
     #define M3OP_RESERVED   { 0 }
+#endif
+
+#if d_m3HasFloat
+    #define M3OP_F          M3OP
+#else
+    #define M3OP_F(...)     { 0 }
 #endif
 
 //-----------------------------------------------------------------------------------------------------------------------------------
@@ -173,7 +180,6 @@ M3Result    CompileBlock                (IM3Compilation io, u8 i_blockType, u8 i
 M3Result    Compile_BlockStatements     (IM3Compilation io);
 M3Result    Compile_Function            (IM3Function io_function);
 
-bool        PeekNextOpcode              (IM3Compilation o, u8 i_opcode);
 u16         GetMaxUsedSlotPlusOne       (IM3Compilation o);
 
 d_m3EndExternC

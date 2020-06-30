@@ -26,7 +26,6 @@
 #include "m3_exec_defs.h"
 #include "m3_math_utils.h"
 
-#include <math.h>
 #include <limits.h>
 
 d_m3BeginExternC
@@ -45,21 +44,14 @@ d_m3BeginExternC
 # define slot(TYPE)                 * (TYPE *) (_sp + immediate (i32))
 # define slot_ptr(TYPE)             (TYPE *) (_sp + immediate (i32))
 
-#if M3_SIZEOF_PTR == 4
-# define constant64(TYPE)           * ((TYPE *) M3_INC(_pc,2))
-#else
-# define constant64(TYPE)           * ((TYPE *) _pc++)
-#endif
-
 #define nextOpDirect()              ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
 #define jumpOpDirect(PC)            ((IM3Operation)(*  PC))( PC + 1, d_m3OpArgs)
 
 # if d_m3EnableOpProfiling
-
-d_m3RetSig  profileOp  (d_m3OpSig, cstr_t i_operationName);
-
+                                    d_m3RetSig  profileOp   (d_m3OpSig, cstr_t i_operationName);
 #   define nextOp()                 return profileOp (d_m3OpAllArgs, __FUNCTION__)
-# elif d_m3TraceExec
+# elif d_m3EnableOpTracing
+                                    d_m3RetSig  debugOp     (d_m3OpSig, cstr_t i_operationName);
 #   define nextOp()                 return debugOp (d_m3OpAllArgs, __FUNCTION__)
 # else
 #   define nextOp()                 return nextOpDirect()
@@ -142,14 +134,14 @@ d_m3Op_i (u32, GreaterThan,                 > )     d_m3Op_i (u64, GreaterThan, 
 d_m3Op_i (u32, LessThanOrEqual,             <=)     d_m3Op_i (u64, LessThanOrEqual,             <=)
 d_m3Op_i (u32, GreaterThanOrEqual,          >=)     d_m3Op_i (u64, GreaterThanOrEqual,          >=)
 
-// float
+#if d_m3HasFloat
 d_m3CommutativeCmpOp_f (f32, Equal,         ==)     d_m3CommutativeCmpOp_f (f64, Equal,         ==)
 d_m3CommutativeCmpOp_f (f32, NotEqual,      !=)     d_m3CommutativeCmpOp_f (f64, NotEqual,      !=)
 d_m3CompareOp_f (f32, LessThan,             < )     d_m3CompareOp_f (f64, LessThan,             < )
 d_m3CompareOp_f (f32, GreaterThan,          > )     d_m3CompareOp_f (f64, GreaterThan,          > )
 d_m3CompareOp_f (f32, LessThanOrEqual,      <=)     d_m3CompareOp_f (f64, LessThanOrEqual,      <=)
 d_m3CompareOp_f (f32, GreaterThanOrEqual,   >=)     d_m3CompareOp_f (f64, GreaterThanOrEqual,   >=)
-
+#endif
 
 d_m3CommutativeOp_i (i32, Add,              +)      d_m3CommutativeOp_i (i64, Add,              +)
 d_m3CommutativeOp_i (i32, Multiply,         *)      d_m3CommutativeOp_i (i64, Multiply,         *)
@@ -173,11 +165,12 @@ d_m3CommutativeOp_i (u64, And,              &)
 d_m3CommutativeOp_i (u64, Or,               |)
 d_m3CommutativeOp_i (u64, Xor,              ^)
 
+#if d_m3HasFloat
 d_m3CommutativeOp_f (f32, Add,              +)      d_m3CommutativeOp_f (f64, Add,              +)
 d_m3CommutativeOp_f (f32, Multiply,         *)      d_m3CommutativeOp_f (f64, Multiply,         *)
 d_m3Op_f (f32, Subtract,                    -)      d_m3Op_f (f64, Subtract,                    -)
 d_m3Op_f (f32, Divide,                      /)      d_m3Op_f (f64, Divide,                      /)
-
+#endif
 
 d_m3OpFunc_i(u32, Rotl, rotl32)
 d_m3OpFunc_i(u32, Rotr, rotr32)
@@ -194,6 +187,7 @@ d_m3OpMacro_i(i32, Remainder, OP_REM_S, INT32_MIN);
 d_m3OpMacro_i(u64, Remainder, OP_REM_U);
 d_m3OpMacro_i(i64, Remainder, OP_REM_S, INT64_MIN);
 
+#if d_m3HasFloat
 d_m3OpFunc_f(f32, Min, min_f32);
 d_m3OpFunc_f(f32, Max, max_f32);
 d_m3OpFunc_f(f64, Min, min_f64);
@@ -201,6 +195,7 @@ d_m3OpFunc_f(f64, Max, max_f64);
 
 d_m3OpFunc_f(f32, CopySign, copysignf);
 d_m3OpFunc_f(f64, CopySign, copysign);
+#endif
 
 // Unary operations
 // Note: This macro follows the principle of d_m3OpMacro
@@ -222,6 +217,7 @@ d_m3Op(TYPE##_##NAME##_s)                           \
 #define d_m3UnaryOp_i(TYPE, NAME, OPERATION)        d_m3UnaryMacro( _r0,  _r0, TYPE, NAME, M3_UNARY, OPERATION)
 #define d_m3UnaryOp_f(TYPE, NAME, OPERATION)        d_m3UnaryMacro(_fp0, _fp0, TYPE, NAME, M3_UNARY, OPERATION)
 
+#if d_m3HasFloat
 d_m3UnaryOp_f (f32, Abs,        fabsf);         d_m3UnaryOp_f (f64, Abs,        fabs);
 d_m3UnaryOp_f (f32, Ceil,       ceilf);         d_m3UnaryOp_f (f64, Ceil,       ceil);
 d_m3UnaryOp_f (f32, Floor,      floorf);        d_m3UnaryOp_f (f64, Floor,      floor);
@@ -229,7 +225,7 @@ d_m3UnaryOp_f (f32, Trunc,      truncf);        d_m3UnaryOp_f (f64, Trunc,      
 d_m3UnaryOp_f (f32, Sqrt,       sqrtf);         d_m3UnaryOp_f (f64, Sqrt,       sqrt);
 d_m3UnaryOp_f (f32, Nearest,    rintf);         d_m3UnaryOp_f (f64, Nearest,    rint);
 d_m3UnaryOp_f (f32, Negate,     -);             d_m3UnaryOp_f (f64, Negate,     -);
-
+#endif
 
 #define OP_EQZ(x) ((x) == 0)
 
@@ -268,7 +264,18 @@ d_m3UnaryOp_i (u64, Popcnt, __builtin_popcountll)
 
 #define OP_WRAP_I64(X) ((X) & 0x00000000ffffffff)
 
-d_m3UnaryOp_i (i32, Wrap_i64, OP_WRAP_I64)
+d_m3Op(i32_Wrap_i64_r)
+{
+    _r0 = OP_WRAP_I64((i64) _r0);
+    nextOp ();
+}
+
+d_m3Op(i32_Wrap_i64_s)
+{
+    i64 operand = slot (i64);
+    _r0 = OP_WRAP_I64(operand);
+    nextOp ();
+}
 
 // Integer sign extension operations
 #define OP_EXTEND8_S_I32(X)  ((int32_t)(int8_t)(X))
@@ -309,6 +316,7 @@ d_m3Op(TYPE##_##NAME##_##FROM##_s_s)                \
     nextOp ();                                      \
 }
 
+#if d_m3HasFloat
 d_m3TruncMacro(_r0, _fp0, i32, Trunc, f32, OP_I32_TRUNC_F32)
 d_m3TruncMacro(_r0, _fp0, u32, Trunc, f32, OP_U32_TRUNC_F32)
 d_m3TruncMacro(_r0, _fp0, i32, Trunc, f64, OP_I32_TRUNC_F64)
@@ -328,7 +336,7 @@ d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f32, OP_I64_TRUNC_SAT_F32)
 d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f32, OP_U64_TRUNC_SAT_F32)
 d_m3TruncMacro(_r0, _fp0, i64, TruncSat, f64, OP_I64_TRUNC_SAT_F64)
 d_m3TruncMacro(_r0, _fp0, u64, TruncSat, f64, OP_U64_TRUNC_SAT_F64)
-
+#endif
 
 #define d_m3TypeModifyOp(REG_TO, REG_FROM, TO, NAME, FROM)  \
 d_m3Op(TO##_##NAME##_##FROM##_r)                            \
@@ -349,9 +357,10 @@ d_m3TypeModifyOp (_r0, _r0, i64, Extend, i32);
 d_m3TypeModifyOp (_r0, _r0, i64, Extend, u32);
 
 // Float to float
+#if d_m3HasFloat
 d_m3TypeModifyOp (_fp0, _fp0, f32, Demote, f64);
 d_m3TypeModifyOp (_fp0, _fp0, f64, Promote, f32);
-
+#endif
 
 #define d_m3TypeConvertOp(REG_TO, REG_FROM, TO, NAME, FROM) \
 d_m3Op(TO##_##NAME##_##FROM##_r_r)                          \
@@ -381,6 +390,7 @@ d_m3Op(TO##_##NAME##_##FROM##_s_s)                          \
 }
 
 // Int to float
+#if d_m3HasFloat
 d_m3TypeConvertOp (_fp0, _r0, f64, Convert, i32);
 d_m3TypeConvertOp (_fp0, _r0, f64, Convert, u32);
 d_m3TypeConvertOp (_fp0, _r0, f64, Convert, i64);
@@ -390,7 +400,7 @@ d_m3TypeConvertOp (_fp0, _r0, f32, Convert, i32);
 d_m3TypeConvertOp (_fp0, _r0, f32, Convert, u32);
 d_m3TypeConvertOp (_fp0, _r0, f32, Convert, i64);
 d_m3TypeConvertOp (_fp0, _r0, f32, Convert, u64);
-
+#endif
 
 #define d_m3ReinterpretOp(REG, TO, SRC, FROM)               \
 d_m3Op(TO##_Reinterpret_##FROM##_r_r)                       \
@@ -425,11 +435,12 @@ d_m3Op(TO##_Reinterpret_##FROM##_s_s)                       \
     nextOp ();                                              \
 }
 
+#if d_m3HasFloat
 d_m3ReinterpretOp (_r0, i32, _fp0, f32)
 d_m3ReinterpretOp (_r0, i64, _fp0, f64)
 d_m3ReinterpretOp (_fp0, f32, _r0, i32)
 d_m3ReinterpretOp (_fp0, f64, _r0, i64)
-
+#endif
 
 d_m3OpDecl  (Loop)
 d_m3OpDecl  (If_r)
@@ -527,13 +538,13 @@ d_m3Op  (Select_##TYPE##_##LABEL##sr)           \
     nextOp ();                                  \
 }
 
-
+#if d_m3HasFloat
 d_m3Select_f (f32, _fp0, r, _r0)
 d_m3Select_f (f32, _fp0, s, slot (i32))
 
 d_m3Select_f (f64, _fp0, r, _r0)
 d_m3Select_f (f64, _fp0, s, slot (i32))
-
+#endif
 
 d_m3Op  (Return)
 {
@@ -635,18 +646,17 @@ d_m3OpDecl  (MemGrow)
 
 d_m3Op  (Const32)
 {
-    u32 constant = constant64 (u32);
-    slot (u32) = constant;
-
+    u32 value = * (u32 *)_pc++;
+    slot (u32) = value;
     nextOp ();
 }
 
 
 d_m3Op  (Const64)
 {
-    u64 constant    = constant64 (u64);
-    slot (u64) = constant;
-
+    u64 value = * (u64 *)_pc;
+    _pc += (M3_SIZEOF_PTR == 4) ? 2 : 1;
+    slot (u64) = value;
     nextOp ();
 }
 
@@ -688,7 +698,7 @@ d_m3Op  (SetGlobal_s64)
     nextOp ();
 }
 
-
+#if d_m3HasFloat
 d_m3Op  (SetGlobal_f32)
 {
     f32 * global = immediate (f32 *);
@@ -705,6 +715,7 @@ d_m3Op  (SetGlobal_f64)
 
     nextOp ();
 }
+#endif
 
 
 d_m3OpDecl (CopySlot_32)
@@ -714,10 +725,9 @@ d_m3OpDecl (CopySlot_64)
 d_m3OpDecl (PreserveCopySlot_64)
 
 #define d_m3SetRegisterSetSlotDecl(TYPE)    \
-                                            \
-d_m3OpDecl (SetRegister_##TYPE)             \
-d_m3OpDecl (SetSlot_##TYPE)                 \
-d_m3OpDecl (PreserveSetSlot_##TYPE)         \
+  d_m3OpDecl (SetRegister_##TYPE)           \
+  d_m3OpDecl (SetSlot_##TYPE)               \
+  d_m3OpDecl (PreserveSetSlot_##TYPE)
 
 d_m3SetRegisterSetSlotDecl (i32)
 d_m3SetRegisterSetSlotDecl (i64)
@@ -725,7 +735,7 @@ d_m3SetRegisterSetSlotDecl (f32)
 d_m3SetRegisterSetSlotDecl (f64)
 
 
-#if defined(d_m3SkipMemoryBoundsCheck)
+#if d_m3SkipMemoryBoundsCheck
 #  define m3MemCheck(x) true
 #else
 #  define m3MemCheck(x) LIKELY(x)
@@ -755,6 +765,7 @@ d_m3Op(DEST_TYPE##_Load_##SRC_TYPE##_r)                 \
         u8* src8 = m3MemData(_mem) + operand;           \
         SRC_TYPE value;                                 \
         memcpy(&value, src8, sizeof(value));            \
+        M3_BSWAP_##SRC_TYPE(value);                     \
         REG = (DEST_TYPE)value;                         \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
@@ -771,6 +782,7 @@ d_m3Op(DEST_TYPE##_Load_##SRC_TYPE##_s)                 \
         u8* src8 = m3MemData(_mem) + operand;           \
         SRC_TYPE value;                                 \
         memcpy(&value, src8, sizeof(value));            \
+        M3_BSWAP_##SRC_TYPE(value);                     \
         REG = (DEST_TYPE)value;                         \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
@@ -782,8 +794,10 @@ d_m3Op(DEST_TYPE##_Load_##SRC_TYPE##_s)                 \
 #define d_m3Load_i(DEST_TYPE, SRC_TYPE) d_m3Load(_r0, DEST_TYPE, SRC_TYPE)
 #define d_m3Load_f(DEST_TYPE, SRC_TYPE) d_m3Load(_fp0, DEST_TYPE, SRC_TYPE)
 
+#if d_m3HasFloat
 d_m3Load_f (f32, f32);
 d_m3Load_f (f64, f64);
+#endif
 
 d_m3Load_i (i32, i8);
 d_m3Load_i (i32, u8);
@@ -811,13 +825,14 @@ d_m3Op  (SRC_TYPE##_Store_##DEST_TYPE##_rs)             \
     )) {                                                \
         u8* mem8 = m3MemData(_mem) + operand;           \
         DEST_TYPE val = (DEST_TYPE) REG;                \
+        M3_BSWAP_##DEST_TYPE(val);                      \
         memcpy(mem8, &val, sizeof(val));                \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
 }                                                       \
 d_m3Op  (SRC_TYPE##_Store_##DEST_TYPE##_sr)             \
 {                                                       \
-    SRC_TYPE value = slot (SRC_TYPE);                   \
+    const SRC_TYPE value = slot (SRC_TYPE);             \
     u64 operand = (u32) _r0;                            \
     u32 offset = immediate (u32);                       \
     operand += offset;                                  \
@@ -827,13 +842,14 @@ d_m3Op  (SRC_TYPE##_Store_##DEST_TYPE##_sr)             \
     )) {                                                \
         u8* mem8 = m3MemData(_mem) + operand;           \
         DEST_TYPE val = (DEST_TYPE) value;              \
+        M3_BSWAP_##DEST_TYPE(val);                      \
         memcpy(mem8, &val, sizeof(val));                \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
 }                                                       \
 d_m3Op  (SRC_TYPE##_Store_##DEST_TYPE##_ss)             \
 {                                                       \
-    SRC_TYPE value = slot (SRC_TYPE);                   \
+    const SRC_TYPE value = slot (SRC_TYPE);             \
     u64 operand = slot (u32);                           \
     u32 offset = immediate (u32);                       \
     operand += offset;                                  \
@@ -843,6 +859,7 @@ d_m3Op  (SRC_TYPE##_Store_##DEST_TYPE##_ss)             \
     )) {                                                \
         u8* mem8 = m3MemData(_mem) + operand;           \
         DEST_TYPE val = (DEST_TYPE) value;              \
+        M3_BSWAP_##DEST_TYPE(val);                      \
         memcpy(mem8, &val, sizeof(val));                \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
@@ -861,6 +878,7 @@ d_m3Op  (TYPE##_Store_##TYPE##_rr)                      \
     )) {                                                \
         u8* mem8 = m3MemData(_mem) + operand;           \
         TYPE val = (TYPE) REG;                          \
+        M3_BSWAP_##TYPE(val);                           \
         memcpy(mem8, &val, sizeof(val));                \
         nextOp ();                                      \
     } else d_outOfBounds;                               \
@@ -870,8 +888,10 @@ d_m3Op  (TYPE##_Store_##TYPE##_rr)                      \
 #define d_m3Store_i(SRC_TYPE, DEST_TYPE) d_m3Store(_r0, SRC_TYPE, DEST_TYPE)
 #define d_m3Store_f(SRC_TYPE, DEST_TYPE) d_m3Store(_fp0, SRC_TYPE, DEST_TYPE) d_m3StoreFp (_fp0, SRC_TYPE);
 
+#if d_m3HasFloat
 d_m3Store_f (f32, f32)
 d_m3Store_f (f64, f64)
+#endif
 
 d_m3Store_i (i32, u8)
 d_m3Store_i (i32, i16)
@@ -911,7 +931,7 @@ d_m3Store_i (i64, i64)
 //---------------------------------------------------------------------------------------------------------------------
 // debug/profiling
 //---------------------------------------------------------------------------------------------------------------------
-#if d_m3TraceExec
+#if d_m3EnableOpTracing
 d_m3RetSig  debugOp  (d_m3OpSig, cstr_t i_opcode)
 {
     char name [100];
@@ -926,12 +946,11 @@ d_m3RetSig  debugOp  (d_m3OpSig, cstr_t i_opcode)
 }
 # endif
 
-# if d_m3RuntimeStackDumps
+# if d_m3EnableOpTracing
 d_m3OpDecl  (DumpStack)
 # endif
 
 # if d_m3EnableOpProfiling
-static const u32 c_m3ProfilerSlotMask = 0xFFFF;
 
 typedef struct M3ProfilerSlot
 {
